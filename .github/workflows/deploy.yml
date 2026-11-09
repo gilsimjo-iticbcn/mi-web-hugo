@@ -1,0 +1,49 @@
+name: Deploy Hugo
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Instalar Hugo
+        uses: peaceiris/actions-hugo@v3
+        with:
+          hugo-version: '0.169.0'
+          extended: true
+
+      - name: Construir la web
+        run: hugo --gc --minify --baseURL "${{ vars.SITE_URL || '/' }}"
+
+      - name: Credenciales AWS (Learner Lab)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-session-token: ${{ secrets.AWS_SESSION_TOKEN }}
+          aws-region: ${{ vars.AWS_REGION }}
+
+      - name: Copiar la web a tu bucket S3
+        run: aws s3 sync public/ s3://${{ vars.S3_BUCKET }}/site/ --delete
+
+      - name: Desplegar en Amplify
+        if: ${{ vars.AMPLIFY_APP_ID != '' }}
+        run: |
+          aws amplify start-deployment \
+            --app-id ${{ vars.AMPLIFY_APP_ID }} \
+            --branch-name main \
+            --source-url s3://${{ vars.S3_BUCKET }}/site/ \
+            --source-url-type BUCKET_PREFIX
